@@ -67,9 +67,11 @@ The sketch builds raw CoAP packets (configurable method, token, Uri-Path, payloa
 ### Suggested workflow
 
 1. **Provision the server on EC2**  
-   - Build the binary (`go build -o server ./server.go`) and copy it to the instance (SCP, SSM, etc.).  
+   - Either build locally (`go build -o server "./AWS EC2 + ESP32/server.go"`) or SSH into the instance and run `go build -o server "./AWS EC2 + ESP32/server.go"` so the binary contains the production settings.  
+   - If building locally for Linux/amd64 before uploading, set `GOOS=linux GOARCH=amd64 go build -o server "./AWS EC2 + ESP32/server.go"`.  
+   - Copy the binary to the instance (e.g., `scp server ec2-user@<public-ip>:/home/ec2-user/`).  
    - Ensure `sudo ufw allow 5684/udp` (or the cloud firewall equivalent) so clients can reach it.  
-   - Run the binary in a tmux/screen session (`./server`); verify logs show `DTLS-PSK CoAP v2 server running on port 5684`.
+   - SSH in, `chmod +x server`, then run it in a tmux/screen session (`./server`); verify logs show `DTLS-PSK CoAP v2 server running on port 5684`.
 2. **Configure the ESP32 sketch**  
    - Open `AWS EC2 + ESP32/coap_client_go.ino` in Arduino IDE.  
    - Set `ssid`/`password`, `coapServer` (EC2 public IP/DNS), and confirm `coapPort` matches the server.  
