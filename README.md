@@ -19,6 +19,12 @@ go run ./server.go
 
 You should see a log entry that the DTLS-PSK server is listening on UDP port `5684`.
 
+To produce the standalone binary:
+
+```bash
+go build -o server ./server.go
+```
+
 ## Running the client
 
 Start the server first, then run:
@@ -28,6 +34,12 @@ go run ./client.go
 ```
 
 The client will perform the DTLS handshake using the PSK identity and key, send a PUT request to `/test`, and print the server’s plain-text response.
+
+To build the client binary:
+
+```bash
+go build -o client ./client.go
+```
 
 ## Customizing the PSK
 
