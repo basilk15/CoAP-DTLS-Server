@@ -67,11 +67,9 @@ The sketch builds raw CoAP packets (configurable method, token, Uri-Path, payloa
 ### Suggested workflow
 
 1. **Provision the server on EC2**  
-   - Either build locally (`go build -o server "./AWS EC2 + ESP32/server.go"`) or SSH into the instance and run `go build -o server "./AWS EC2 + ESP32/server.go"` so the binary contains the production settings.  
-   - If building locally for Linux/amd64 before uploading, set `GOOS=linux GOARCH=amd64 go build -o server "./AWS EC2 + ESP32/server.go"`.  
-   - Copy the binary to the instance (e.g., `scp server ec2-user@<public-ip>:/home/ec2-user/`).  
-   - Ensure `sudo ufw allow 5684/udp` (or the cloud firewall equivalent) so clients can reach it.  
-   - SSH in, `chmod +x server`, then run it in a tmux/screen session (`./server`); verify logs show `DTLS-PSK CoAP v2 server running on port 5684`.
+   - Either build locally (`go build -o server "./AWS EC2 + ESP32/server.go"`) or follow the sequential EC2 steps below to compile on the instance itself.  
+   - If building locally for Linux/amd64 before uploading, set `GOOS=linux GOARCH=amd64 go build -o server "./AWS EC2 + ESP32/server.go"` and copy via SCP.  
+   - Ensure the security group allows inbound UDP/5684, then run the binary (`./server`) inside tmux/screen; verify logs show `DTLS-PSK CoAP v2 server running on port 5684`.
 2. **Configure the ESP32 sketch**  
    - Open `AWS EC2 + ESP32/coap_client_go.ino` in Arduino IDE.  
    - Set `ssid`/`password`, `coapServer` (EC2 public IP/DNS), and confirm `coapPort` matches the server.  
@@ -90,6 +88,22 @@ The sketch builds raw CoAP packets (configurable method, token, Uri-Path, payloa
 - mbedTLS errors like `-0x4280` typically indicate PSK mismatch or cipher negotiation issues; double-check identity/key values.  
 - Connection timeouts often stem from blocked UDP in AWS security groups or local firewalls.  
 - Resetting the ESP32 after changing PSK values helps clear cached DTLS state.
+
+### Sequential deployment steps (EC2)
+
+1. **Launch EC2**: create an Amazon Linux 2023 or Ubuntu instance, assign a security group, and SSH into it.  
+2. **Update packages**: `sudo yum update -y` (Amazon Linux) or `sudo apt update && sudo apt upgrade -y` (Ubuntu).  
+3. **Install Go**: e.g., `sudo yum install golang -y`, then confirm with `go version`.  
+4. **Create workspace**: `mkdir -p ~/coap-server && cd ~/coap-server`.  
+5. **Init module**: `go mod init coap-server`.  
+6. **Add code**: `nano server.go` and paste the DTLS-PSK server from `AWS EC2 + ESP32/server.go`.  
+7. **Download deps**: `go mod tidy` to fetch `github.com/plgd-dev/go-coap/v2`, `github.com/pion/dtls/v2`, etc.  
+8. **Build**: `go build server.go` to produce the `server` binary.  
+9. **Open port**: update the Security Group inbound rule (Custom UDP, port 5684, source `0.0.0.0/0`).  
+10. **Run**: `./server` (or inside `screen -S coap`); watch for `DTLS-PSK CoAP v2 server running on port 5684...`.  
+11. **Keep alive (optional)**: install screen (`sudo yum install screen -y`), detach with `Ctrl+A` then `D`, reattach via `screen -r coap`.
+
+Your CoAP endpoint will then be reachable at `coaps://<EC2_PUBLIC_IP>:5684/test` from the ESP32 client.
 
 ## Notes
 
