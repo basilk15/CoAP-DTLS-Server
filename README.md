@@ -46,7 +46,7 @@ go build -o client ./client.go
 Update both `pskHex` values in `server.go` and `client.go` with your own 32-byte hex string (matching on both sides). Adjust `identity` if you want to differentiate multiple clients or servers.  
 If you use the ESP32 sketch described below, mirror the same identity/PSK in `AWS EC2 + ESP32/coap_client_go.ino`.
 
-## AWS EC2 server + ESP32 client
+# AWS EC2 server + ESP32 client
 
 The `AWS EC2 + ESP32` folder contains `coap_client_go.ino`. It implements an ESP32 DTLS client with mbedTLS primitives (`mbedtls_ssl`, `mbedtls_net`, `mbedtls_ctr_drbg`, etc.) so the microcontroller can speak directly to the Go server with the same PSK identity (`"myserver"`) and 32-byte key.  
 The sketch builds raw CoAP packets (configurable method, token, Uri-Path, payload) and sends them over the encrypted DTLS channel.
