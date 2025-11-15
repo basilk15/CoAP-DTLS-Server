@@ -7,6 +7,17 @@ This repository demonstrates how to secure a CoAP deployment with DTLS in Go usi
 
 The shared identity (`"myserver"`) and key (hex string decoded to bytes) live in both programs so the DTLS layer can authenticate peers without certificates.
 
+```
+.
+├── server.go
+├── client.go
+├── go.mod / go.sum
+├── README.md
+└── AWS EC2 + ESP32
+    ├── server.go
+    └── coap_client_go.ino
+```
+
 ## Requirements
 
 - Go 1.23 or later.
