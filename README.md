@@ -48,21 +48,46 @@ If you use the ESP32 sketch described below, mirror the same identity/PSK in `AW
 
 ## AWS EC2 server + ESP32 client
 
-The `AWS EC2 + ESP32` folder contains `coap_client_go.ino`. It implements an ESP32 DTLS client using mbedTLS that speaks to this Go CoAP server with the same PSK identity (`"myserver"`) and 32-byte key.
+The `AWS EC2 + ESP32` folder contains `coap_client_go.ino`. It implements an ESP32 DTLS client with mbedTLS primitives (`mbedtls_ssl`, `mbedtls_net`, `mbedtls_ctr_drbg`, etc.) so the microcontroller can speak directly to the Go server with the same PSK identity (`"myserver"`) and 32-byte key.  
+The sketch builds raw CoAP packets (configurable method, token, Uri-Path, payload) and sends them over the encrypted DTLS channel.
 
-Suggested workflow:
+### Architecture
+
+- **Cloud**: Go server running on an EC2 instance (public IP, UDP port 5684 open).  
+- **Edge**: ESP32 on Wi-Fi initiating DTLS handshake, using PSK to authenticate the EC2 server.  
+- **Protocol flow**: Wi-Fi → DTLS handshake (PSK) → CoAP confirmable message to `/test` → server response (ACK + payload).
+
+### Prerequisites
+
+- EC2 instance with outbound internet and a security group allowing inbound UDP/5684.  
+- ESP32 board support in Arduino IDE (Tools → Board → ESP32).  
+- Wi-Fi credentials the ESP32 can reach.  
+- Optional: Serial monitor at 115200 baud to inspect logs (handshake status, CoAP message IDs, errors).
+
+### Suggested workflow
 
 1. **Provision the server on EC2**  
-   - Build the binary (`go build -o server ./server.go`) and copy it to your EC2 instance.  
-   - Open UDP port `5684` in the instance security group.  
-   - Run the binary (for example `./server`) so it listens on the public interface.
+   - Build the binary (`go build -o server ./server.go`) and copy it to the instance (SCP, SSM, etc.).  
+   - Ensure `sudo ufw allow 5684/udp` (or the cloud firewall equivalent) so clients can reach it.  
+   - Run the binary in a tmux/screen session (`./server`); verify logs show `DTLS-PSK CoAP v2 server running on port 5684`.
 2. **Configure the ESP32 sketch**  
-   - Open `AWS EC2 + ESP32/coap_client_go.ino` in the Arduino IDE.  
-   - Update `ssid`/`password` with your Wi-Fi network, set `coapServer` to the EC2 public IP, and keep `coapPort` at `"5684"` unless you changed it on the Go server.  
-   - Replace `pskIdentity` and the `psk` byte array if you generated new credentials for the Go apps.
+   - Open `AWS EC2 + ESP32/coap_client_go.ino` in Arduino IDE.  
+   - Set `ssid`/`password`, `coapServer` (EC2 public IP/DNS), and confirm `coapPort` matches the server.  
+   - Replace `pskIdentity`/`psk` with your chosen credentials; they must match the Go server and any other clients.  
+   - Optional: tweak the payload inside `buildCoapPacket` to send sensor readings.
 3. **Deploy to the ESP32**  
-   - Select the correct board/port in the IDE and upload the sketch.  
-   - Monitor the serial console to confirm the DTLS handshake succeeds and that CoAP PUTs to `/test` return the server response.
+   - Select the correct board/port and upload the sketch.  
+   - Open Serial Monitor (115200) to follow the sequence: Wi-Fi connect → “Initializing DTLS…” → “DTLS handshake completed!” → CoAP request/response logs.
+4. **Verify end-to-end**  
+   - On the EC2 server log, confirm the ESP32 requests appear under the `/test` handler.  
+   - Optionally run `tcpdump -i eth0 udp port 5684` on EC2 to watch DTLS traffic (encrypted).  
+   - If the connection stalls, confirm the instance’s public IP and UDP reachability, then reboot the ESP32 to retry.
+
+### Troubleshooting tips
+
+- mbedTLS errors like `-0x4280` typically indicate PSK mismatch or cipher negotiation issues; double-check identity/key values.  
+- Connection timeouts often stem from blocked UDP in AWS security groups or local firewalls.  
+- Resetting the ESP32 after changing PSK values helps clear cached DTLS state.
 
 ## Notes
 
