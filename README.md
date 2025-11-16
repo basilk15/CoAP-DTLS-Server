@@ -1,4 +1,4 @@
-# CoAP DTLS Server, Client & AWS EC2 + ESP32 Deployment Guide
+# CoAP DTLS Server & Client For IoT Usecases
 
 This repository demonstrates how to secure a CoAP deployment with DTLS in Go using a pre‑shared key (PSK). It contains:
 
