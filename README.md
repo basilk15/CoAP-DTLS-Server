@@ -1,122 +1,108 @@
-# CoAP DTLS Server & Client for ESP32 to AWS EC2
+# CoAP over DTLS: PSK path + Certificate path
 
-This repository demonstrates how to secure a CoAP deployment with DTLS in Go using a pre‑shared key (PSK). It contains:
-
-- `server.go`: a DTLS-PSK CoAP server that exposes `/test` and accepts GET/POST/PUT requests.
-- `client.go`: a matching DTLS client that performs a handshake, issues a PUT to `/test`, and prints the response.
-
-The shared identity (`"myserver"`) and key (hex string decoded to bytes) live in both programs so the DTLS layer can authenticate peers without certificates.
+Two complete DTLS modes live here: PSK and certificate-based. Each includes a Go server and an ESP32 (mbedTLS) client.
 
 ```
 .
-├── server.go
-├── client.go
-├── go.mod / go.sum
-├── README.md
-└── AWS EC2 + ESP32
-    ├── server.go
-    └── coap_client_go.ino
+├── server.go                 # Go DTLS-PSK server (localhost demo)
+├── client.go                 # Go DTLS-PSK client
+├── AWS EC2 + ESP32/          # PSK flow for cloud+edge
+│   ├── server.go             # Go DTLS-PSK server (EC2-ready)
+│   └── coap_client_go.ino    # ESP32 DTLS-PSK client
+└── AWS EC2 + ESP32 (certs)/  # Certificate flow
+    ├── server.go             # Go DTLS (cert) server
+    └── coap_client_go.ino    # ESP32 DTLS (cert) client with verification
 ```
 
 ## Requirements
 
-- Go 1.23 or later.
+- Go 1.23+
+- Arduino IDE with ESP32 board support (for the `.ino` sketches)
 
-## Running the server
+---
 
+## PSK path (fast start)
+
+**Server (local demo)**
+- File: `server.go`
+- Run: `go run ./server.go`
+- Listens on UDP `:5684`, handler `/test` (GET/POST/PUT), cipher `TLS_PSK_WITH_AES_128_CCM_8`.
+
+**Client (local demo)**
+- File: `client.go`
+- Run: `go run ./client.go`
+- Performs DTLS-PSK handshake and issues a PUT to `/test`.
+
+**Customize PSK**
+- Edit `identity` and `pskHex` in both `server.go` and `client.go` (32-byte hex). Keep them identical.
+
+**ESP32 PSK variant (cloud)**
+- Folder: `AWS EC2 + ESP32`
+- Server: `go run "./AWS EC2 + ESP32/server.go"` (or build with `GOOS=linux GOARCH=amd64` for EC2)
+- ESP32 sketch: `AWS EC2 + ESP32/coap_client_go.ino`
+  - Set `ssid`/`password`, `coapServer`, `coapPort`
+  - Set `pskIdentity` and `psk[]` to match the Go server
+  - Upload, open Serial Monitor (115200) → watch Wi-Fi → DTLS handshake → CoAP GET/POST/PUT logs
+
+**AWS EC2 quick checklist (PSK)**
+1) Security Group allows UDP/5684 inbound
+2) Build/upload server binary, run inside `screen`/`tmux`
+3) Point ESP32 `coapServer` to EC2 public IP/DNS
+
+---
+
+## Certificate path (authenticated server)
+
+You generate a self-signed server cert and use it on both sides.
+
+**Generate cert/key (self-signed)**
 ```bash
-go run ./server.go
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
 ```
 
-You should see a log entry that the DTLS-PSK server is listening on UDP port `5684`.
+**Server (certificate)**
+- Folder: `AWS EC2 + ESP32 (certs)`
+- File: `server.go`
+- Place `cert.pem` and `key.pem` next to `server.go`
+- Run: `go run "./AWS EC2 + ESP32 (certs)/server.go"`
+- Config: loads the key pair, `ClientAuth: dtls.NoClientCert` (one-way auth), CoAP `/test` handlers unchanged.
 
-To produce the standalone binary:
+**ESP32 client (certificate, verified)**
+- Folder: `AWS EC2 + ESP32 (certs)`
+- File: `coap_client_go.ino`
+- What changed:
+  - `MBEDTLS_SSL_VERIFY_REQUIRED` enforces server verification
+  - `mbedtls_x509_crt_parse` loads the trusted CA (the same `cert.pem` content)
+  - `mbedtls_ssl_conf_ca_chain` sets the CA; RSA DTLS ciphers preferred
+- To use:
+  1) Paste your `cert.pem` (including BEGIN/END) into `server_ca_pem` in the sketch
+  2) Set `ssid`/`password`, `coapServer`, `coapPort`
+  3) Optional: add hostname check by setting `coapServer` to the cert CN/SAN and calling `mbedtls_ssl_set_hostname(&ssl, coapServer);` before `mbedtls_ssl_handshake`
+  4) Upload to ESP32, open Serial Monitor → expect verified DTLS handshake then CoAP GET/POST/PUT
 
-```bash
-go build -o server ./server.go
-```
+**AWS EC2 quick checklist (certs)**
+1) Security Group allows UDP/5684 inbound
+2) Copy `cert.pem` and `key.pem` to the server folder on EC2
+3) Run `server.go` from `AWS EC2 + ESP32 (certs)`
+4) Ensure ESP32 sketch contains the exact `cert.pem` PEM block
 
-## Running the client
+---
 
-Start the server first, then run:
+## Troubleshooting (both modes)
+- UDP blocked? Open SG/firewall for UDP/5684.
+- Handshake fails (PSK): identity/PSK mismatch or wrong cipher.
+- Handshake fails (cert): PEM not parsed or hostname/CA mismatch. Re-paste full BEGIN/END block.
+- Timeouts: confirm `coapServer` IP/DNS is reachable from ESP32 Wi-Fi.
+- After changing keys/certs, reboot ESP32 to clear DTLS state.
 
-```bash
-go run ./client.go
-```
+---
 
-The client will perform the DTLS handshake using the PSK identity and key, send a PUT request to `/test`, and print the server’s plain-text response.
+## Build notes
+- Binaries: `go build -o server ./server.go` and `go build -o client ./client.go` (adjust paths for EC2 variants).
+- Cross-compile for EC2: `GOOS=linux GOARCH=amd64 go build -o server "./AWS EC2 + ESP32/server.go"`.
 
-To build the client binary:
+---
 
-```bash
-go build -o client ./client.go
-```
-
-## Customizing the PSK
-
-Update both `pskHex` values in `server.go` and `client.go` with your own 32-byte hex string (matching on both sides). Adjust `identity` if you want to differentiate multiple clients or servers.  
-If you use the ESP32 sketch described below, mirror the same identity/PSK in `AWS EC2 + ESP32/coap_client_go.ino`.
-
-# AWS EC2 server + ESP32 client
-
-The `AWS EC2 + ESP32` folder contains `coap_client_go.ino`. It implements an ESP32 DTLS client with mbedTLS primitives (`mbedtls_ssl`, `mbedtls_net`, `mbedtls_ctr_drbg`, etc.) so the microcontroller can speak directly to the Go server with the same PSK identity (`"myserver"`) and 32-byte key.  
-The sketch builds raw CoAP packets (configurable method, token, Uri-Path, payload) and sends them over the encrypted DTLS channel.
-
-### Architecture
-
-- **Cloud**: Go server running on an EC2 instance (public IP, UDP port 5684 open).  
-- **Edge**: ESP32 on Wi-Fi initiating DTLS handshake, using PSK to authenticate the EC2 server.  
-- **Protocol flow**: Wi-Fi → DTLS handshake (PSK) → CoAP confirmable message to `/test` → server response (ACK + payload).
-
-### Prerequisites
-
-- EC2 instance with outbound internet and a security group allowing inbound UDP/5684.  
-- ESP32 board support in Arduino IDE (Tools → Board → ESP32).  
-- Wi-Fi credentials the ESP32 can reach.  
-- Optional: Serial monitor at 115200 baud to inspect logs (handshake status, CoAP message IDs, errors).
-
-### Suggested workflow
-
-1. **Provision the server on EC2**  
-   - Either build locally (`go build -o server "./AWS EC2 + ESP32/server.go"`) or follow the sequential EC2 steps below to compile on the instance itself.  
-   - If building locally for Linux/amd64 before uploading, set `GOOS=linux GOARCH=amd64 go build -o server "./AWS EC2 + ESP32/server.go"` and copy via SCP.  
-   - Ensure the security group allows inbound UDP/5684, then run the binary (`./server`) inside tmux/screen; verify logs show `DTLS-PSK CoAP v2 server running on port 5684`.
-2. **Configure the ESP32 sketch**  
-   - Open `AWS EC2 + ESP32/coap_client_go.ino` in Arduino IDE.  
-   - Set `ssid`/`password`, `coapServer` (EC2 public IP/DNS), and confirm `coapPort` matches the server.  
-   - Replace `pskIdentity`/`psk` with your chosen credentials; they must match the Go server and any other clients.  
-   - Optional: tweak the payload inside `buildCoapPacket` to send sensor readings.
-3. **Deploy to the ESP32**  
-   - Select the correct board/port and upload the sketch.  
-   - Open Serial Monitor (115200) to follow the sequence: Wi-Fi connect → “Initializing DTLS…” → “DTLS handshake completed!” → CoAP request/response logs.
-4. **Verify end-to-end**  
-   - On the EC2 server log, confirm the ESP32 requests appear under the `/test` handler.  
-   - Optionally run `tcpdump -i eth0 udp port 5684` on EC2 to watch DTLS traffic (encrypted).  
-   - If the connection stalls, confirm the instance’s public IP and UDP reachability, then reboot the ESP32 to retry.
-
-### Troubleshooting tips
-
-- mbedTLS errors like `-0x4280` typically indicate PSK mismatch or cipher negotiation issues; double-check identity/key values.  
-- Connection timeouts often stem from blocked UDP in AWS security groups or local firewalls.  
-- Resetting the ESP32 after changing PSK values helps clear cached DTLS state.
-
-### Sequential deployment steps (EC2)
-
-1. **Launch EC2**: create an Amazon Linux 2023 or Ubuntu instance, assign a security group, and SSH into it.  
-2. **Update packages**: `sudo yum update -y` (Amazon Linux) or `sudo apt update && sudo apt upgrade -y` (Ubuntu).  
-3. **Install Go**: e.g., `sudo yum install golang -y`, then confirm with `go version`.  
-4. **Create workspace**: `mkdir -p ~/coap-server && cd ~/coap-server`.  
-5. **Init module**: `go mod init coap-server`.  
-6. **Add code**: `nano server.go` and paste the DTLS-PSK server from `AWS EC2 + ESP32/server.go`.  
-7. **Download deps**: `go mod tidy` to fetch `github.com/plgd-dev/go-coap/v2`, `github.com/pion/dtls/v2`, etc.  
-8. **Build**: `go build server.go` to produce the `server` binary.  
-9. **Open port**: update the Security Group inbound rule (Custom UDP, port 5684, source `0.0.0.0/0`).  
-10. **Run**: `./server` (or inside `screen -S coap`); watch for `DTLS-PSK CoAP v2 server running on port 5684...`.  
-11. **Keep alive (optional)**: install screen (`sudo yum install screen -y`), detach with `Ctrl+A` then `D`, reattach via `screen -r coap`.
-
-Your CoAP endpoint will then be reachable at `coaps://<EC2_PUBLIC_IP>:5684/test` from the ESP32 client.
-
-## Notes
-
-- The cipher suite is restricted to `TLS_PSK_WITH_AES_128_CCM_8` for simplicity.
-- The default server address is `localhost:5684`; change it in `client.go` to reach a remote endpoint.
+## Security posture
+- PSK mode: simple and lightweight, but shared key management is manual.
+- Cert mode: proper server authentication; ESP32 rejects unknown/tampered certs.
