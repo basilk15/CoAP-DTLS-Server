@@ -49,6 +49,18 @@ Two complete DTLS modes live here: PSK and certificate-based. Each includes a Go
 2) Build/upload server binary, run inside `screen`/`tmux`
 3) Point ESP32 `coapServer` to EC2 public IP/DNS
 
+**EC2 build/run (PSK)**
+```bash
+# on your workstation (Linux/amd64 target)
+GOOS=linux GOARCH=amd64 go build -o server "./AWS EC2 + ESP32/server.go"
+scp server ec2:~/coap-server/
+
+# on EC2
+sudo yum update -y    # or apt
+cd ~/coap-server
+./server              # runs DTLS-PSK CoAP on UDP 5684
+```
+
 ---
 
 ## Certificate path (authenticated server)
@@ -85,6 +97,21 @@ openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -node
 2) Copy `cert.pem` and `key.pem` to the server folder on EC2
 3) Run `server.go` from `AWS EC2 + ESP32 (certs)`
 4) Ensure ESP32 sketch contains the exact `cert.pem` PEM block
+
+**EC2 build/run (certs)**
+```bash
+# generate certs locally (or on EC2)
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+
+# build for EC2
+GOOS=linux GOARCH=amd64 go build -o server "./AWS EC2 + ESP32 (certs)/server.go"
+scp server cert.pem key.pem ec2:~/coap-server-certs/
+
+# on EC2
+sudo yum update -y    # or apt
+cd ~/coap-server-certs
+./server              # runs DTLS (cert) CoAP on UDP 5684
+```
 
 ---
 
