@@ -7,16 +7,13 @@
 #include "mbedtls/timing.h"
 #include "mbedtls/x509_crt.h"
 
-// WiFi credentials
 const char* ssid = "pop-os";
 const char* password = "111222333";
 
 // CoAP Server settings
-const char* coapServer = "13.210.144.240";  // Your Go server IP
-const char* coapPort = "5684";  // DTLS CoAP port as string
+const char* coapServer = "13.210.144.240";  
+const char* coapPort = "5684"; 
 
-// Trusted CA certificate (use cert.pem from your server). Keep the BEGIN/END lines.
-// Replace the placeholder text with the actual PEM contents.
 const char server_ca_pem[] = R"PEM(-----BEGIN CERTIFICATE-----
 MIIFAjCCAuqgAwIBAgIUdRGoAx8ozlvBeEbH6euXZF3fO98wDQYJKoZIhvcNAQEL
 BQAwGTEXMBUGA1UEAwwOMTMuMjEwLjE0NC4yNDAwHhcNMjUxMTI3MTkyMDI0WhcN
@@ -48,7 +45,6 @@ xElLnCBbpe0nAUhW34Ts23KzrSqTLO4wiGHe2k1w333Ih8R9UKu3FU1XA344BUX/
 -----END CERTIFICATE-----
 )PEM";
 
-// mbedTLS structures
 mbedtls_net_context server_fd;
 mbedtls_ssl_context ssl;
 mbedtls_ssl_config conf;
@@ -60,7 +56,7 @@ mbedtls_x509_crt ca;
 bool dtlsConnected = false;
 uint16_t messageId = 1;
 
-// CoAP codes
+
 #define COAP_CODE_GET    0x01
 #define COAP_CODE_POST   0x02
 #define COAP_CODE_PUT    0x03
@@ -75,7 +71,6 @@ bool initDTLS() {
   int ret;
   Serial.println("Initializing DTLS...");
 
-  // Initialize contexts
   mbedtls_net_init(&server_fd);
   mbedtls_ssl_init(&ssl);
   mbedtls_ssl_config_init(&conf);
@@ -83,7 +78,6 @@ bool initDTLS() {
   mbedtls_entropy_init(&entropy);
   mbedtls_x509_crt_init(&ca);
 
-  // Seed random number generator
   const char* pers = "esp32_dtls_client_cert";
   ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
                                (const unsigned char*)pers, strlen(pers));
@@ -93,7 +87,6 @@ bool initDTLS() {
     return false;
   }
 
-  // Setup SSL/DTLS config
   ret = mbedtls_ssl_config_defaults(&conf,
                                      MBEDTLS_SSL_IS_CLIENT,
                                      MBEDTLS_SSL_TRANSPORT_DATAGRAM,
@@ -115,7 +108,6 @@ bool initDTLS() {
   mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
   mbedtls_ssl_conf_ca_chain(&conf, &ca, NULL);
 
-  // Prefer RSA certificate ciphers (matches Go DTLS server using cert.pem/key.pem)
   static const int ciphersuites[] = {
     MBEDTLS_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
     MBEDTLS_TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
@@ -148,7 +140,6 @@ bool connectDTLS() {
   int ret;
   Serial.println("Connecting to DTLS server...");
 
-  // Connect to server
   ret = mbedtls_net_connect(&server_fd, coapServer, coapPort, MBEDTLS_NET_PROTO_UDP);
   if (ret != 0) {
     Serial.println("Failed to connect to server");
@@ -161,10 +152,9 @@ bool connectDTLS() {
   mbedtls_ssl_set_bio(&ssl, &server_fd,
                       mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
 
-  // Set timeout for handshake
+  
   mbedtls_ssl_conf_read_timeout(&conf, 10000);
 
-  // Perform DTLS handshake
   Serial.println("Starting DTLS handshake...");
   while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
     if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
